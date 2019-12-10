@@ -908,7 +908,7 @@ class TimeSeries:
 
         plot_traces(self.time, data_sources, source_labels, plot_parameters, y_labels, y_scaling, plot_markers=plot_markers, fig_num=fig_num)
 
-    def trajectory_plot(self, fig_num=None, plot_kwargs={'linestyle': '.'}, steady_state_markers=True):
+    def trajectory_plot(self, fig_num=None, plot_kwargs={'linestyle': '-'}, steady_state_markers=True):
         """Plot of the downwind versus vertical position of the kite.
 
         Args:
@@ -958,9 +958,9 @@ class TimeSeries:
         plt.xlabel('x [m]')
         plt.ylabel('z [m]')
 
-        # if ax.get_xlim()[0] > 0.:
-        #     plt.xlim([0., None])
-        # plt.ylim([0., None])
+        if ax.get_xlim()[0] > 0.:
+            plt.xlim([0., None])
+        plt.ylim([0., None])
         plt.grid(True)
         plt.gca().set_aspect('equal')
         if markers_plotted:
