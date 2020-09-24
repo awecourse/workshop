@@ -10,9 +10,8 @@ et al. The model is implemented in such a way that it can be used for numerical 
 import numpy as np
 import matplotlib.pyplot as plt
 from copy import copy
-# import pandas as pd
-
-from utils import zip_el, plot_traces, default_colors
+import pandas as pd
+from awe_quasi_steady_model.utils import zip_el, plot_traces, default_colors
 
 np.seterr(all='raise')
 
@@ -103,8 +102,8 @@ class Environment:
         pass
 
 
-class AtmosphericPressure(Environment):
-    """Environment state class introducing height dependent air density. Inherits from `StaticEnvironment`.
+class EnvAtmosphericPressure(Environment):
+    """Environment state class introducing height dependent air density. Inherits from `Environment`.
 
     Attributes:
         rho_0 (float): Standard atmospheric density at sea level at the standard temperature [kg/m^3].
@@ -135,8 +134,8 @@ class AtmosphericPressure(Environment):
         self.air_density = self.rho_0*np.exp(-altitude/self.h_p)
 
 
-class LogProfile(AtmosphericPressure):
-    """Environment state class introducing a logarithmic wind profile. Inherits from `AtmosphericPressure`.
+class LogProfile(EnvAtmosphericPressure):
+    """Environment state class introducing a logarithmic wind profile. Inherits from `EnvAtmosphericPressure`.
 
     Attributes:
         wind_speed_ref (float): Wind speed at reference height [m/s].
@@ -186,9 +185,9 @@ class LogProfile(AtmosphericPressure):
         plt.grid(True)
 
 
-class NormalisedWindTable1D(AtmosphericPressure):
+class NormalisedWindTable1D(EnvAtmosphericPressure):
     """Environment state class introducing a wind profile specified by a normalised wind speed look-up table. Inherits
-    from `AtmosphericPressure`.
+    from `EnvAtmosphericPressure`.
 
     Attributes:
         h_ref (float): Reference height [m].
@@ -229,14 +228,14 @@ class NormalisedWindTable1D(AtmosphericPressure):
         """Plot the wind speed versus the height above ground."""
         wind_speeds = np.array(self.normalised_wind_speeds) * self.wind_speed_ref
         plt.plot(wind_speeds, self.heights, label=label)
-        plt.xlabel('Wind speed [m/s]')
+        plt.xlabel('Wind speed [m s$^{-1}$]')
         plt.ylabel('Height [m]')
         plt.grid(True)
 
 
-class WindTable2D(AtmosphericPressure):
+class WindTable2D(EnvAtmosphericPressure):
     """Environment state class introducing a 2 component wind profile specified by 2 wind speed look-up tables. Inherits
-    from `AtmosphericPressure`.
+    from `EnvAtmosphericPressure`.
 
     Attributes:
         h_ref (float): Reference height [m].
@@ -259,9 +258,9 @@ class WindTable2D(AtmosphericPressure):
 
     def calculate_wind(self, height):
         # Linear interpolation is used to determine the wind speed components between points along the height.
-        v_x = np.interp(height, self.height_table, self.wind_speed_x_table, right=np.nan)
-        v_y = np.interp(height, self.height_table, self.wind_speed_y_table, right=np.nan)
-        if height <= 0. or np.isnan(v_x) or np.isnan(v_y):
+        v_x = np.interp(height, self.height_table, self.wind_speed_x_table)
+        v_y = np.interp(height, self.height_table, self.wind_speed_y_table)
+        if height <= 0. or height > self.height_table[-1]:
             raise OperationalLimitViolation("Invalid height is given: {:.1f}.".format(height))
 
         # The absolute wind speed and direction follow from the 2 wind speed components.
@@ -280,7 +279,7 @@ class WindTable2D(AtmosphericPressure):
         plt.grid(True)
 
 
-class StaticAerodynamics:
+class SysPropsFixedAeroCoeffs:
     """Base system properties class - setting the properties of the airborne components. For this class, the aerodynamic
     characteristics are assumed constant. Only the tether mass is varying with the tether length.
 
@@ -340,9 +339,9 @@ class StaticAerodynamics:
         self.tether_mass = self.tether_density * 0.25 * np.pi * self.tether_diameter ** 2 * self.tether_length
 
 
-class SystemProperties(StaticAerodynamics):
+class SystemProperties(SysPropsFixedAeroCoeffs):
     """System properties class introducing binary aerodynamic characteristics: a powered and de-powered state of the
-    kite. Inherits from `StaticAerodynamics`.
+    kite. Inherits from `SysPropsFixedAeroCoeffs`.
 
     Attributes:
         kite_projected_area (float): Projected area of the kite [m^2] - not to be confused with flat area.
@@ -428,8 +427,7 @@ class SystemProperties(StaticAerodynamics):
             kite_lift_coefficient = self.kite_lift_coefficient_depowered
             kite_drag_coefficient = self.kite_drag_coefficient_depowered
         c_l = kite_lift_coefficient
-        c_d_tether = .25*d*le/s*self.tether_drag_coefficient
-        c_d = kite_drag_coefficient + c_d_tether
+        c_d = kite_drag_coefficient + .25*d*le/s*self.tether_drag_coefficient
 
         self.aerodynamic_force_coefficient = np.sqrt(c_l**2 + c_d**2)
         self.lift_to_drag = c_l/c_d
@@ -440,23 +438,98 @@ class SystemProperties(StaticAerodynamics):
         self.calculate_aerodynamic_properties(kite_powered)
 
 
-# class SystemProperties2(SystemProperties):
-#     def calculate_aerodynamic_properties(self, kite_powered):
-#         """Calculate the the aerodynamic characteristics of kite and tether combination.
-#
-#         Args:
-#             kite_powered (bool): Use powered aerodynamic characteristics of the kite if True.
-#
-#         """
-#         if kite_powered:
-#             self.aerodynamic_force_coefficient = .61  # [-]
-#             c_l = self.kite_lift_coefficient_powered
-#             c_d = (self.aerodynamic_force_coefficient**2 - c_l**2)**.5
-#         else:
-#             self.aerodynamic_force_coefficient = .2  # [-]
-#             c_l = self.kite_lift_coefficient_depowered
-#             c_d = (self.aerodynamic_force_coefficient**2 - c_l**2)**.5
-#         self.lift_to_drag = c_l/c_d
+class SysPropsAeroCurves(SysPropsFixedAeroCoeffs):
+    def __init__(self, props):
+        """
+        Args:
+            props (dict): System properties collected in a dictionary.
+
+        """
+        # Kite properties.
+        self.kite_projected_area = 16.7  # [m^2]
+        self.kite_mass = 20.  # [kg]
+
+        # Tether properties.
+        self.tether_density = 724.  # [kg/m^3]
+        self.tether_diameter = 0.004  # [m]
+
+        # Difference between powered and depowered state.
+        self.pitch_powered = 5 * np.pi/180.  # [rad]
+        self.pitch_depowered = -5 * np.pi/180.  # [rad]
+
+        # Aerodynamic coefficients of kite and tether.
+        self.angles_of_attack_curve = np.linspace(0, 25, 26) * np.pi/180.
+        self.kite_lift_coefficients_curve_parameters = np.array([0.1, 2.5, 10*np.pi/180., 8*np.pi/180.])*1.15
+        self.kite_drag_coefficients_curve_parameters = np.array([0.1108, 1.3822, -1.384])/2
+        self.tether_drag_coefficient = 1.1  # [-]
+
+        # Relevant operational limits.
+        self.reeling_speed_min_limit = 0.
+        self.reeling_speed_max_limit = 8.
+        self.tether_force_min_limit = 1200.
+        self.tether_force_max_limit = 3200.
+
+        # Procedure to set attributes using input dictionary.
+        for key, val in props.items():
+            if hasattr(self, key):
+                self.__setattr__(key, val)
+            else:
+                print("Unexpected property provided: {}.".format(key))
+
+        # Calculated properties of (airborne) tether.
+        self.tether_length = None  # [m]
+        self.tether_mass = None  # [kg]
+
+        # Calculated aerodynamic characteristics of kite and tether combination.
+        self.aerodynamic_force_coefficient = None  # [-]
+        self.lift_to_drag = None  # [-]
+        self.pitch = None  # [rad]
+
+    def calculate_tether_mass(self):
+        self.tether_mass = self.tether_density * 0.25 * np.pi * self.tether_diameter ** 2 * self.tether_length
+
+    def calculate_aerodynamic_properties(self, alpha):
+        """Calculate the the aerodynamic characteristics of kite and tether combination.
+
+        Args:
+            alpha (float): Angle of attack [rad].
+
+        """
+        d = self.tether_diameter
+        s = self.kite_projected_area
+        le = self.tether_length
+
+        def lift_curve(a):
+            coeffs_part1 = self.kite_lift_coefficients_curve_parameters[:2]
+            alpha_switch = self.kite_lift_coefficients_curve_parameters[2]
+            d_alpha_peak = self.kite_lift_coefficients_curve_parameters[3]
+
+            c22 = -coeffs_part1[1]/(2*d_alpha_peak)
+            c20 = coeffs_part1[0]+coeffs_part1[1]*alpha_switch-c22*d_alpha_peak**2
+            coeffs_part2 = [c20, 0, c22]
+
+            if a < self.kite_lift_coefficients_curve_parameters[2]:
+                return np.array([1, alpha]).dot(coeffs_part1)
+            else:
+                x = a - alpha_switch - d_alpha_peak
+                return np.array([1, x, x**2]).dot(coeffs_part2)
+
+        kite_lift_coefficient = lift_curve(alpha)
+        kite_drag_coefficient = np.array([1, alpha, alpha**2]).dot(self.kite_drag_coefficients_curve_parameters)
+        c_l = kite_lift_coefficient
+        c_d_tether = .25*d*le/s*self.tether_drag_coefficient
+        c_d = kite_drag_coefficient + c_d_tether
+
+        self.aerodynamic_force_coefficient = np.sqrt(c_l**2 + c_d**2)
+        self.lift_to_drag = c_l/c_d
+
+    def update(self, tether_length, kite_powered=True):
+        self.tether_length = tether_length
+        self.calculate_tether_mass()
+        if kite_powered:
+            self.pitch = self.pitch_powered
+        else:
+            self.pitch = self.pitch_depowered
 
 
 class KitePosition:
@@ -535,17 +608,24 @@ class SteadyState:
         reeling_factor (float): Ratio of the reeling speed and the wind speed [-].
         kinematic_ratio (float): Ratio of the apparent wind velocity components [-].
         tangential_speed_factor (float): Ratio of the tangential kite speed and the wind speed [-].
+        wind_speed
         apparent_wind_speed (float): Apparent wind speed experienced by the kite [m/s].
+        heading
+        inflow_angle
         angle_of_attack (float): Angle of attack seen by the kite [rad].
+        lift_to_drag
         aerodynamic_force (float): Resultant aerodynamic force acting on the point particle [N].
         tether_force_kite (float): Tether force acting on the point particle [N].
         tether_force_ground (float): Tether force at the ground [N].
         power_ground (float): Power at the ground [W].
+        kite_speed
+        kite_tangential_speed
         reeling_speed (float): Reeling speed [m/s].
         elevation_rate (float): Elevation rate of the point particle [rad/s].
         azimuth_rate (float): Azimuth rate of the point particle [rad/s].
         lift_to_drag_error (float): Error between calculated and actual lift-to-drag ratio [-].
         n_iterations (int): Number of iterations used in iterative procedure.
+        n_iterations_aoa
         converged (bool): Flag indicating if the convergence criteria is met.
         error_message (str): Error message in case an error has occurred.
         error_code (int): Error code in case an error has occurred.
@@ -557,7 +637,7 @@ class SteadyState:
             the kite.
         tether_force_min_limit_violated (bool): Flag indicating if the minimum tether force limit is violated at
             the kite.
-        tether_force_limit_violation (float): Tether force minimum/maximum limit violation [N] at the kite.
+        (to be removed) tether_force_limit_violation (float): Tether force minimum/maximum limit violation [N] at the kite.
 
     """
     def __init__(self, iterative_procedure_config={}):
@@ -577,7 +657,10 @@ class SteadyState:
         # Flow conditions at the kite.
         self.wind_speed = None
         self.apparent_wind_speed = None
+        self.heading = None
+        self.inflow_angle = None
         self.angle_of_attack = None
+        self.lift_to_drag = None
 
         # Calculated forces and power.
         self.aerodynamic_force = None
@@ -595,6 +678,7 @@ class SteadyState:
         # Iterative procedure state.
         self.lift_to_drag_error = np.inf
         self.n_iterations = None
+        self.n_iterations_aoa = None
         self.converged = False
         self.error_message = None
         self.error_code = -1
@@ -608,8 +692,7 @@ class SteadyState:
         # Monitoring parameters for tether force limit violation.
         self.tether_force_max_limit_violated = False
         self.tether_force_min_limit_violated = False
-        # TODO: is the lower really needed?
-        self.tether_force_limit_violation = 0
+        # self.tether_force_limit_violation = 0
 
     def process_error(self, error_message, error_code=0, print_message=True):
         """Processing of steady state errors.
@@ -635,7 +718,7 @@ class SteadyState:
         """Iterative procedure for finding the kinematic ratio yielding the steady state of the kite.
 
         Args:
-            system_properties (`StaticAerodynamics` or child): Collection of system properties.
+            system_properties (`SysPropsFixedAeroCoeffs` or child): Collection of system properties.
             environment_state (`Environment` or child): Specification of environment.
             basic_kinematics (`KiteKinematics`): Basic kinematic properties required for finding the steady state.
             print_details (bool, optional): Prints procedure details to screen if True.
@@ -650,15 +733,12 @@ class SteadyState:
         m_tether = system_properties.tether_mass
 
         # Position of point particle in wind reference frame.
+        # Vectors are expressed in the kite reference frame with axes e_r, e_theta, and e_phi.
         phi = basic_kinematics.azimuth_angle - environment_state.downwind_direction  # Convert from ground reference frame to
         # wind reference frame.
         theta = np.pi / 2 - basic_kinematics.elevation_angle
         chi = basic_kinematics.course_angle
         r = basic_kinematics.straight_tether_length
-
-        # Aerodynamics of kite.
-        c_r = system_properties.aerodynamic_force_coefficient
-        lift_to_drag = system_properties.lift_to_drag
 
         # Environmental state.
         v_wind = environment_state.wind_speed
@@ -719,80 +799,119 @@ class SteadyState:
 
             f_aero_theta = -(.5*m_tether + m)*g*np.sin(theta)  # tangential aerodynamic force
 
-        # Parameters used for loop condition.
-        kappa = lift_to_drag  # Initial assumption for kinematic ratio (massless solution).
-        self.n_iterations = 0  # Counter for number of iterations.
+        # Iterative procedure to determine the angle of attack.
+        if system_properties.__class__.__name__ == "SysPropsAerodynamicCurves":
+            update_aero_coefficients = True
+            alpha = 15*np.pi/180.  # Initial assumption for angle of attack.
+            system_properties.calculate_aerodynamic_properties(alpha)
+        else:
+            update_aero_coefficients = False
 
-        # Iterative procedure to determine true kinematic ratio.
+        self.n_iterations_aoa = 0
+        # fraction_d_alpha = 1.  #
         while True:
-            if 'tether_force' in self.control_settings[0]:  # Updating reeling factor.
-                rf = np.sin(theta) * np.cos(phi) - np.sqrt(f_aero / (q*s*c_r*(1+kappa**2)))
-            else:  # Updating aerodynamic force.
-                f_aero = c_r*(1+kappa**2)*(np.sin(theta)*np.cos(phi)-rf)**2*q*s  # Magnitude of aerodynamic force.
+            # Aerodynamics of kite.
+            c_r = system_properties.aerodynamic_force_coefficient
+            lift_to_drag = system_properties.lift_to_drag
 
+            # Parameters used for loop condition.
+            kappa = lift_to_drag  # Initial assumption for kinematic ratio (massless solution).
+            self.n_iterations = 0  # Counter for number of iterations.
+
+            # Iterative procedure to determine true kinematic ratio.
+            while True:
+                if 'tether_force' in self.control_settings[0]:  # Updating reeling factor.
+                    rf = np.sin(theta) * np.cos(phi) - np.sqrt(f_aero / (q*s*c_r*(1+kappa**2)))
+                else:  # Updating aerodynamic force.
+                    f_aero = c_r*(1+kappa**2)*(np.sin(theta)*np.cos(phi)-rf)**2*q*s  # Magnitude of aerodynamic force.
+
+                    try:
+                        f_aero_r = np.sqrt(f_aero**2 - f_aero_theta**2)  # Radial aerodynamic force.
+                    except (ValueError, FloatingPointError):
+                        error_message = "No feasible solution found for radial aerodynamic force " \
+                                        "after {} iterations - aerodynamic force is too small to keep " \
+                                        "the kite in the air.".format(self.n_iterations)
+                        self.process_error(error_message, 3, print_details)
+                        f_aero_r = 0.
+
+                    f_aero_vector = np.array([f_aero_r, f_aero_theta, 0.])
+
+                # Updating tangential velocity factor.
                 try:
-                    f_aero_r = np.sqrt(f_aero**2 - f_aero_theta**2)  # Radial aerodynamic force.
+                    lambda_ = a + np.sqrt(a**2+b**2-1+kappa**2*(b-rf)**2)
                 except (ValueError, FloatingPointError):
-                    error_message = "No feasible solution found for radial aerodynamic force " \
-                                    "after {} iterations - aerodynamic force is too small to keep " \
-                                    "the kite in the air.".format(self.n_iterations)
-                    self.process_error(error_message, 3, print_details)
-                    f_aero_r = 0.
-
-                f_aero_vector = np.array([f_aero_r, f_aero_theta, 0.])
-
-            # Updating tangential velocity factor.
-            try:
-                lambda_ = a + np.sqrt(a**2+b**2-1+kappa**2*(b-rf)**2)
-            except (ValueError, FloatingPointError):
-                error_message = "No feasible solution found for tangential velocity factor " \
-                                "after {} iterations.".format(self.n_iterations)
-                self.process_error(error_message, 4, print_details)
-                lambda_ = a
-
-            # Updating the apparent wind speed.
-            v_app = (np.sin(theta) * np.cos(phi) - rf) * np.sqrt(1 + kappa ** 2) * v_wind
-            v_app_vector = np.array([
-                (np.sin(theta) * np.cos(phi) - rf) * v_wind,
-                (np.cos(theta) * np.cos(phi) - lambda_ * np.cos(chi)) * v_wind,
-                (-np.sin(phi) - lambda_ * np.sin(chi)) * v_wind,
-            ])
-
-            if v_app < 1e-6:
-                self.process_error("Unrealistic apparent wind speed.", 7, print_details)
-            else:
-                # Evaluate the convergence of the calculated to the actual lift-to-drag ratio.
-                drag = np.dot(f_aero_vector, v_app_vector)/v_app
-                try:
-                    lift_to_drag_calc = np.sqrt((f_aero/drag)**2-1)
-                    kappa *= np.sqrt(lift_to_drag/lift_to_drag_calc)
-                except (ValueError, FloatingPointError):
-                    error_message = "No feasible solution for found for calculated lift-to-drag " \
+                    error_message = "No feasible solution found for tangential velocity factor " \
                                     "after {} iterations.".format(self.n_iterations)
-                    self.process_error(error_message, 5, print_details)
+                    self.process_error(error_message, 4, print_details)
+                    lambda_ = a
 
-            if kappa < 1e-6:
-                self.process_error("Unrealistic kappa.", 6, print_details)
+                # Updating the apparent wind speed.
+                v_app = (np.sin(theta) * np.cos(phi) - rf) * np.sqrt(1 + kappa ** 2) * v_wind
+                v_app_vector = np.array([
+                    (np.sin(theta) * np.cos(phi) - rf) * v_wind,
+                    (np.cos(theta) * np.cos(phi) - lambda_ * np.cos(chi)) * v_wind,
+                    (-np.sin(phi) - lambda_ * np.sin(chi)) * v_wind,
+                ])
 
-            if self.error_message is not None:
-                kappa = None
-                break
+                if v_app < 1e-6:
+                    self.process_error("Unrealistic apparent wind speed.", 7, print_details)
+                else:
+                    # Evaluate the convergence of the calculated to the actual lift-to-drag ratio.
+                    drag = np.dot(f_aero_vector, v_app_vector)/v_app
+                    try:
+                        lift_to_drag_calc = np.sqrt((f_aero/drag)**2-1)
+                        kappa *= np.sqrt(lift_to_drag/lift_to_drag_calc)
+                    except (ValueError, FloatingPointError):
+                        error_message = "No feasible solution for found for calculated lift-to-drag " \
+                                        "after {} iterations.".format(self.n_iterations)
+                        self.process_error(error_message, 5, print_details)
 
-            self.lift_to_drag_error = lift_to_drag-lift_to_drag_calc
-            convergence_parameter = abs(self.lift_to_drag_error)/lift_to_drag
+                if kappa < 1e-6:
+                    self.process_error("Unrealistic kappa.", 6, print_details)
 
-            # Check loop conditions.
-            self.n_iterations += 1
+                if self.error_message is not None:
+                    kappa = None
+                    break
 
-            if self.force_n_iterations is not None and self.n_iterations == self.force_n_iterations:
-                break
-            elif convergence_parameter < self.convergence_tolerance:
-                self.converged = True
-                break
+                self.lift_to_drag_error = lift_to_drag-lift_to_drag_calc
+                eps = abs(self.lift_to_drag_error)/lift_to_drag
 
-            if self.max_iterations is not None and self.n_iterations >= self.max_iterations:
-                error_message = "Maximum of {} iterations reached before convergence.".format(self.n_iterations)
-                self.process_error(error_message, 6, print_details)
+                # Check loop conditions.
+                self.n_iterations += 1
+
+                if self.force_n_iterations is not None and self.n_iterations == self.force_n_iterations:
+                    break
+                elif eps < self.convergence_tolerance:
+                    self.converged = True
+                    break
+
+                if self.max_iterations is not None and self.n_iterations == self.max_iterations:
+                    error_message = "Maximum of {} iterations reached before convergence.".format(self.n_iterations)
+                    self.process_error(error_message, 6, print_details)
+                    break
+
+            # Determine inflow angle with respect to tangential plane.
+            try:
+                inflow_angle = np.arcsin(v_app_vector[0]/v_app)  # Assuming wing is parallel to the unit sphere.
+            except FloatingPointError:
+                inflow_angle = 0.
+
+            self.n_iterations_aoa += 1
+
+            if update_aero_coefficients:
+                alpha_new = inflow_angle + system_properties.pitch
+                d_alpha = alpha_new - alpha
+                if abs(d_alpha) < .01 * np.pi/180.:
+                    self.angle_of_attack = alpha
+                    self.lift_to_drag = system_properties.lift_to_drag
+                    break
+                elif self.n_iterations_aoa == 50:
+                    self.process_error("Angle of attack did not converge.", 9, print_details)
+                else:
+                    # fraction_d_alpha -= .01
+                    alpha = alpha + d_alpha*.95  #*fraction_d_alpha
+                    system_properties.calculate_aerodynamic_properties(alpha)
+            else:
                 break
 
         if lambda_ < 0.:
@@ -817,19 +936,14 @@ class SteadyState:
         # else:
         #     p = 0.
 
-        # Determine angle of attack.
-        try:
-            alpha = np.arcsin(v_app_vector[0]/v_app)
-        except FloatingPointError:
-            alpha = 0.
-
         self.reeling_factor = rf
         self.kinematic_ratio = kappa
         self.tangential_speed_factor = lambda_
         self.kite_tangential_speed = lambda_ * v_wind
         self.wind_speed = v_wind
         self.apparent_wind_speed = v_app
-        self.angle_of_attack = alpha
+        self.heading = np.arctan2(v_app_vector[2], v_app_vector[1])
+        self.inflow_angle = inflow_angle
         self.aerodynamic_force = f_aero
         self.tether_force_kite = f_tether
         self.tether_force_ground = f_tether_ground
@@ -854,11 +968,11 @@ class SteadyState:
             if max_force is not None and self.tether_force_ground > max_force:
                 self.tether_force_max_limit_violated = True
                 self.tether_force_min_limit_violated = False
-                self.tether_force_limit_violation = self.tether_force_ground - max_force
+                # self.tether_force_limit_violation = self.tether_force_ground - max_force
             elif min_force is not None and self.tether_force_ground < min_force:
                 self.tether_force_max_limit_violated = False
                 self.tether_force_min_limit_violated = True
-                self.tether_force_limit_violation = min_force - self.tether_force_ground
+                # self.tether_force_limit_violation = min_force - self.tether_force_ground
 
 
 class TimeSeries:
@@ -908,7 +1022,7 @@ class TimeSeries:
 
         plot_traces(self.time, data_sources, source_labels, plot_parameters, y_labels, y_scaling, plot_markers=plot_markers, fig_num=fig_num)
 
-    def trajectory_plot(self, fig_num=None, plot_kwargs={'linestyle': '.'}, steady_state_markers=True):
+    def trajectory_plot(self, fig_num=None, plot_kwargs={'linestyle': ':'}, steady_state_markers=True):
         """Plot of the downwind versus vertical position of the kite.
 
         Args:
@@ -1172,15 +1286,6 @@ class Phase(TimeSeries):
                 new_kinematics.update()
 
             # Add new time, kinematics, and steady state to corresponding result lists.
-            #TODO: remove lower
-            # # Hack to show steady state convergence graphs for last point of retraction phase. First run optimization
-            # # with lower commented out, then reload PowerCurveConstructor data, uncomment lower and use
-            # # pc.eval_plots() to make plots.
-            # if break_flag and not self.kite_powered:
-            #     evaluate_convergence = True
-            #     new_steady_state = self.determine_new_steady_state(system_properties, environment_state,
-            #                                                        new_kinematics, iterative_procedure_config,
-            #                                                        evaluate_convergence)
             new_steady_state = self.determine_new_steady_state(new_kinematics)
             self.time.append(self.timer)
             self.kinematics.append(new_kinematics)
@@ -1240,7 +1345,7 @@ class Phase(TimeSeries):
         """
         pass
 
-    def determine_new_steady_state(self, kinematics):  #, evaluate_convergence=False):
+    def determine_new_steady_state(self, kinematics):
         """Determine new steady state based on new kinematics and updated system properties and environment state.
 
         Args:
@@ -1278,29 +1383,19 @@ class Phase(TimeSeries):
             max_force = sys_props.tether_force_max_limit
         max_speed = sys_props.reeling_speed_max_limit
         min_speed = sys_props.reeling_speed_min_limit
+        assert max_speed > 0 and min_speed >= 0, "Reeling speed limits should be positive."
 
         # When operational limits are imposed, evaluate if the primary control setting yield limit violations.
         if self.impose_operational_limits:
             if 'tether_force' not in self.control_settings[0]:  # If speed controlled.
                 # Check if the tether force limits are violated. If so, use the force limit as controlled parameter.
                 if max_force is not None and new_state.tether_force_ground > max_force:
-                    # tflv = new_state.tether_force_limit_violation
-                    # new_state = SteadyState(iterative_procedure_config)
-                    # new_state.tether_force_limit_violation = tflv
                     new_state.control_settings = ('tether_force_ground', max_force)
                     new_state.find_state(sys_props, env_state, kinematics)
-                    # new_state.tether_force_max_limit_violated = True
                 elif (min_force is not None and new_state.tether_force_ground < min_force) or \
                         (self.__class__.__name__ == "RetractionPhase" and new_state.error_code == 7):
-                    # tflv = new_state.tether_force_limit_violation
-                    # new_state = SteadyState(iterative_procedure_config)
-                    # new_state.tether_force_limit_violation = tflv
                     new_state.control_settings = ('tether_force_ground', min_force)
                     new_state.find_state(sys_props, env_state, kinematics)
-                    # new_state.tether_force_min_limit_violated = True
-                # elif self.__class__.__name__ == "TransitionPhase" and new_state.error_code == 7:
-                #     new_state.control_settings = ('tether_force_ground', max_force)
-                #     new_state.find_state(sys_props, env_state, kinematics)
                 elif new_state.error_message is not None and temporary_suppress_steady_state_errors:
                     raise SteadyStateError(new_state.error_message, new_state.error_code)
             #TODO: find way to improve lower check
@@ -1340,33 +1435,23 @@ class Phase(TimeSeries):
         if self.enable_limit_violation_error:
             error_message = None
             if max_speed is not None and abs(new_state.reeling_speed) > max_speed + 1e-3:
-                error_message = "The reeling speed: {:.3f} m/s is exceeding the {:.1f} m/s " \
+                error_message = "The reeling speed: {:.1f} m/s is exceeding the {:.1f} m/s " \
                                 "maximum limit.".format(new_state.reeling_speed, max_speed)
                 error_code = 1
             elif min_speed is not None and abs(new_state.reeling_speed) < min_speed - 1e-3:
-                error_message = "The reeling speed: {:.3f} m/s is exceeding the {:.1f} m/s " \
+                error_message = "The reeling speed: {:.1f} m/s is smaller than the {:.1f} m/s " \
                                 "minimum limit.".format(new_state.reeling_speed, min_speed)
                 error_code = 2
             elif max_force is not None and new_state.tether_force_ground > max_force + 1e-3:
-                error_message = "The tether force: {:.3f} N is exceeding the {:.1f} N " \
+                error_message = "The tether force: {:.1f} N is exceeding the {:.1f} N " \
                                 "maximum limit.".format(new_state.tether_force_ground, max_force)
                 error_code = 3
             elif min_force is not None and new_state.tether_force_ground < min_force - 1e-3:
-                error_message = "The tether force: {:.3f} N is exceeding the {:.1f} N " \
+                error_message = "The tether force: {:.1f} N is smaller than the {:.1f} N " \
                                 "minimum limit.".format(new_state.tether_force_ground, min_force)
                 error_code = 4
             if error_message:
                 raise OperationalLimitViolation(error_message, error_code)
-
-        # if evaluate_convergence:
-        #     from steady_state_verification_plots import convergence_check
-        #     kinematics_per_reeling_factor = {
-        #         new_state.reeling_factor: kinematics,
-        #     }
-        #     wind_speed_range = .1
-        #     wind_speed_ref = env_state.wind_speed
-        #     wind_speeds = np.linspace(wind_speed_ref-wind_speed_range/2, wind_speed_ref+wind_speed_range/2, 3)
-        #     convergence_check(kinematics_per_reeling_factor, wind_speeds, system_properties=sys_props, plot_ss_attr='elevation_rate')
 
         return new_state
 
@@ -1456,6 +1541,78 @@ class RetractionPhase(Phase):
             self.timer += reduced_time_step
             kin.straight_tether_length += d_tether_length_remaining
             kin.elevation_angle += last_steady_state.elevation_rate*reduced_time_step
+            kin.update()
+            end_phase = True
+        return end_phase, kin
+
+
+class RetractionPhaseElevationStop(RetractionPhase):
+    def __init__(self, phase_settings={'control': ('tether_force_ground', 1200.)}, impose_operational_limits=True):
+        """
+        Args:
+            phase_settings (tuple, optional): Setting parent's `control_settings` attribute.
+            impose_operational_limits (bool, optional): Setting parent's `impose_operational_limits` attribute.
+
+        """
+        super().__init__(phase_settings, impose_operational_limits)
+
+        # Binary kite aerodynamic state.
+        self.kite_powered = False
+
+        # Properties of initial state and final position.
+        self.tether_length_start = 385.
+        self.elevation_angle_start = 30.*np.pi/180.
+        self.elevation_angle_end = 60.*np.pi/180.
+
+        self.fix_tether_length = False  # Should be False for realistic simulation.
+
+    def finalize_start_and_end_kite_obj(self):
+        """Finalize the initial state and ending criteria before running the simulation, respectively `kinematics_start`
+        and `position_end`."""
+        self.kinematics_start = KiteKinematics(self.tether_length_start, self.AZIMUTH_ANGLE,
+                                               self.elevation_angle_start, self.COURSE_ANGLE)
+        self.position_end = KitePosition(elevation_angle=self.elevation_angle_end)
+
+    def determine_new_kinematics(self, last_kinematics, last_steady_state):
+        """Determine kinematic state of the kite for the new time point based on the previous kinematic and steady state
+        properties. For the retraction phase, the tether length and elevation angle are updated.
+
+        Args:
+            last_kinematics (`KiteKinematics`): Kinematics object of previous time point.
+            last_steady_state (`SteadyState`): Steady state of previous time point.
+
+        Returns:
+            bool: Flag indicating meeting phase ending criteria.
+            `KiteKinematics`: Kinematic state of the kite for the new time point.
+
+        """
+        kin = copy(last_kinematics)
+
+        # Determine the difference in tether length and elevation angle for regular time step.
+        if not self.fix_tether_length:
+            d_tether_length = last_steady_state.reeling_speed*self.time_step
+        else:
+            d_tether_length = 0.
+        d_elevation = last_steady_state.elevation_rate*self.time_step
+        if d_elevation < 1e-4 and d_tether_length > 0.:
+            raise PhaseError("Reeling out at constant elevation angle during reel-in phase.", 3)
+
+        # Check if target tether length is not exceeded next iteration.
+        if kin.elevation_angle + d_elevation < self.position_end.elevation_angle:
+            # Set timer and kite kinematics for next iteration.
+            self.timer += self.time_step
+            kin.straight_tether_length += d_tether_length
+            kin.elevation_angle += d_elevation
+            kin.update()
+            end_phase = False
+        else:
+            d_elevation_remaining = self.position_end.elevation_angle - kin.elevation_angle
+            reduced_time_step = d_elevation_remaining/last_steady_state.elevation_rate
+
+            # Set final timer and kite kinematics.
+            self.timer += reduced_time_step
+            kin.elevation_angle += d_elevation_remaining
+            kin.straight_tether_length += last_steady_state.reeling_speed*reduced_time_step
             kin.update()
             end_phase = True
         return end_phase, kin
@@ -1692,6 +1849,7 @@ class TractionPhase(Phase):
 
 
 class TractionPhaseHybrid(TractionPhase):
+    # Estimates how many crosswind patterns can be flown within the traction phase.
     def __init__(self, phase_settings={'control': ('reeling_factor', .37)}, impose_operational_limits=True):
         super().__init__(phase_settings, impose_operational_limits)
         self.tether_length_start_aim = self.tether_length_start
@@ -1699,39 +1857,34 @@ class TractionPhaseHybrid(TractionPhase):
         # State of kite along the cross-wind pattern.
         self.n_crosswind_patterns = 0.
 
-    def run_simulation(self, system_properties, environment_state, steady_state_config={}, timer_start=0.):
+    def run_simulation(self, system_properties, environment_state, steady_state_config={}, timer_start=0., n_patterns=6):
+        # TODO: check what n_patterns needs to be
         super().run_simulation(system_properties, environment_state, steady_state_config, timer_start)
 
-        elevation_angle_start_aim = self.elevation_angle.calculate(self.tether_length_start_aim)
-        kinematics_start_aim = KiteKinematics(self.tether_length_start_aim, self.azimuth_angle,
-                                              elevation_angle_start_aim, self.course_angle)
-        environment_state.calculate(kinematics_start_aim.z)
-        reeling_speed0 = self.determine_new_steady_state(kinematics_start_aim).reeling_speed
-        start_pattern_settings = {
-            'tether_length': self.tether_length_start_aim,
-            'elevation_angle_ref': elevation_angle_start_aim,
-            'control': self.control_settings,
-            'time_step': .5,
-        }
-        start_pattern = EvaluatePattern(start_pattern_settings)
-        start_pattern.enable_limit_violation_error = False
-        start_pattern_duration = start_pattern.calc_performance_along_pattern(system_properties, environment_state,
-                                                                              steady_state_config=steady_state_config)
+        tether_lengths = np.linspace(self.tether_length_start_aim, self.tether_length_end, n_patterns)
 
-        elevation_angle_end = self.elevation_angle.calculate(self.tether_length_end)
-        reeling_speed1 = self.steady_states[-1].reeling_speed
-        end_pattern_settings = {
-            'tether_length': self.tether_length_end,
-            'elevation_angle_ref': elevation_angle_end,
-            'control': self.control_settings,
-            'time_step': .5,
-        }
-        end_pattern = EvaluatePattern(end_pattern_settings)
-        end_pattern.enable_limit_violation_error = False
-        end_pattern_duration = end_pattern.calc_performance_along_pattern(system_properties, environment_state,
-                                                                          steady_state_config=steady_state_config)
-        avg_pattern_duration = (start_pattern_duration+end_pattern_duration)/2
-        phase_duration_aim = (self.tether_length_end - self.tether_length_start_aim)/((reeling_speed0+reeling_speed1)/2)
+        pattern_durations = []
+        reeling_speeds = []
+        for le in tether_lengths:
+            elev = self.elevation_angle.calculate(le)
+            kin = KiteKinematics(le, self.azimuth_angle, elev, self.course_angle)
+            environment_state.calculate(kin.z)
+            rs = self.determine_new_steady_state(kin).reeling_speed
+            pattern_settings = {
+                'tether_length': le,
+                'elevation_angle_ref': elev,
+                'control': self.control_settings,
+                'time_step': .5,
+            }
+            pattern = EvaluatePattern(pattern_settings)
+            pattern.enable_limit_violation_error = False
+            pattern_duration = pattern.calc_performance_along_pattern(system_properties, environment_state,
+                                                                              steady_state_config=steady_state_config)
+            pattern_durations.append(pattern_duration)
+            reeling_speeds.append(rs)
+
+        avg_pattern_duration = np.mean(pattern_durations)
+        phase_duration_aim = (self.tether_length_end - self.tether_length_start_aim)/np.mean(reeling_speeds)
         self.n_crosswind_patterns = phase_duration_aim/avg_pattern_duration
 
 
@@ -1990,102 +2143,6 @@ class EvaluatePattern(Phase):  # Determine performance along cross wind pattern 
 
         return pattern_duration
 
-    # def determine_new_kinematics(self, last_kinematics, last_steady_state):
-    #     """Determine kinematic state of the kite for the new time point based on the previous kinematic and steady state
-    #     properties. For the traction phase, the tether length is updated. If the elevation angle at the start and end of
-    #     the phase are different, then also the elevation angle is updated.
-    #
-    #     Args:
-    #         last_kinematics (`KiteKinematics`): Kinematics object of previous time point.
-    #         last_steady_state (`SteadyState`): Steady state of previous time point.
-    #
-    #     Returns:
-    #         bool: Flag indicating meeting phase ending criteria.
-    #         `KiteKinematics`: Kinematic state of the kite for the new time point.
-    #
-    #     """
-    #     kin = copy(last_kinematics)
-    #
-    #     pattern_length = self.pattern.curve_length_unit_sphere * last_kinematics.straight_tether_length
-    #     d_cross_wind_distance = last_steady_state.kite_tangential_speed * self.time_step
-    #
-    #     # Check if target tether length is not exceeded next iteration.
-    #     if self.n_crosswind_patterns + d_cross_wind_distance / pattern_length < 1.:
-    #         dt = self.time_step
-    #         end_sim = False
-    #     else:
-    #         # Determine the time needed for reaching the target tether length.
-    #         d_cross_wind_distance = (1 - self.n_crosswind_patterns) * pattern_length
-    #         dt = d_cross_wind_distance / last_steady_state.kite_tangential_speed
-    #         end_sim = True
-    #
-    #     # Set next timer and kite kinematics.
-    #     self.timer += dt
-    #     self.n_crosswind_patterns += d_cross_wind_distance / pattern_length
-    #     theta, phi, chi = self.pattern.get_properties_along_curve(self.n_crosswind_patterns % 1)[:3]
-    #     kin.elevation_angle = self.elevation_angle_ref + theta
-    #     kin.azimuth_angle = phi
-    #     kin.course_angle = chi
-    #     kin.update()
-    #
-    #     return end_sim, kin
-    #
-    # def run_simulation(self, system_properties, environment_state, steady_state_config={}, print_details=False):
-    #     self.time, self.kinematics, self.steady_states, self.s = [], [], [], []
-    #     self.min_reeling_speed, self.max_reeling_speed = np.inf, -np.inf
-    #
-    #     self.system_properties = system_properties
-    #     self.environment_state = environment_state
-    #     self.steady_state_config = steady_state_config
-    #
-    #     self.timer = 0.
-    #     theta, phi, chi = self.pattern.get_properties_along_curve(0.)[:3]
-    #     cos_phi = [np.cos(phi)]
-    #     cos_theta = [np.cos(theta)]
-    #     cos_chi = [np.cos(chi)]
-    #     kinematics_start = KiteKinematics(self.tether_length, phi, self.elevation_angle_ref + theta, chi)
-    #     environment_state.calculate(kinematics_start.z)
-    #     if self.follow_wind:
-    #         kinematics_start.azimuth_angle += environment_state.downwind_direction
-    #         kinematics_start.update()
-    #
-    #     steady_state_start = self.determine_new_steady_state(kinematics_start)
-    #     self.time.append(self.timer)
-    #     self.s.append(0.)
-    #     self.kinematics.append(kinematics_start)
-    #     self.steady_states.append(steady_state_start)
-    #
-    #     end_phase = False
-    #     counter = 0
-    #     while not end_phase:
-    #         end_phase, new_kinematics = self.determine_new_kinematics(self.kinematics[-1], self.steady_states[-1])
-    #         environment_state.calculate(new_kinematics.z)
-    #         if self.follow_wind:
-    #             new_kinematics.azimuth_angle += environment_state.downwind_direction
-    #             new_kinematics.update()
-    #
-    #         new_steady_state = self.determine_new_steady_state(new_kinematics)
-    #         self.time.append(self.timer)
-    #         self.s.append(self.n_crosswind_patterns)
-    #         self.kinematics.append(new_kinematics)
-    #         self.steady_states.append(new_steady_state)
-    #         cos_phi.append(np.cos(new_kinematics.azimuth_angle))
-    #         cos_theta.append(np.cos(new_kinematics.elevation_angle))
-    #         cos_chi.append(np.cos(new_kinematics.course_angle))
-    #
-    #         counter += 1
-    #         if counter > 500:
-    #             print("Was not able to complete pattern simulation.")
-    #             return None
-    #
-    #     if print_details:
-    #         print("Pattern duration [s]:", self.timer)
-    #         print("Representative azimuth angle [deg]:", np.arccos(np.mean(cos_phi[:-1]))*180./np.pi)
-    #         print("Representative elevation angle [deg]:", np.arccos(np.mean(cos_theta[:-1]))*180./np.pi)
-    #         print("Representative course angle [deg]:", np.arccos(np.mean(cos_chi[:-1]))*180./np.pi)
-    #
-    #     return self.timer
-
     def plot_traces(self, x, plot_parameters, y_labels=None, y_scaling=None):
         """Generic plotting method for making a plot of `KiteKinematics` and `SteadyState` attributes.
 
@@ -2184,6 +2241,10 @@ class Cycle(TimeSeries):
             float: Time average of the produced power [W].
 
         """
+        if isinstance(environment_state, list):
+            env_retr, env_trans, env_trac = environment_state
+        else:
+            env_retr, env_trans, env_trac = environment_state, environment_state, environment_state
         error_in_phase = None
         reorder = True
 
@@ -2199,7 +2260,7 @@ class Cycle(TimeSeries):
         retr.finalize_start_and_end_kite_obj()
 
         try:
-            retr.run_simulation(system_properties, environment_state, steady_state_config, 0.)
+            retr.run_simulation(system_properties, env_retr, steady_state_config, 0.)
             last_straight_tether_length = retr.kinematics[-1].straight_tether_length
         except PhaseError as e:
             if e.code not in [1, 3]:  # Simulation does not seem to reach end criteria.
@@ -2226,7 +2287,7 @@ class Cycle(TimeSeries):
             timer_start = 0
         else:
             timer_start = last_time
-        trans.run_simulation(system_properties, environment_state, steady_state_config, timer_start)
+        trans.run_simulation(system_properties, env_trans, steady_state_config, timer_start)
         last_kinematics = trans.kinematics[-1]
         last_time = trans.time[-1]
         # trans.average_power = 0
@@ -2250,7 +2311,7 @@ class Cycle(TimeSeries):
         trac.finalize_start_and_end_kite_obj()
 
         try:
-            trac.run_simulation(system_properties, environment_state, steady_state_config, last_time)
+            trac.run_simulation(system_properties, env_trac, steady_state_config, last_time)
         except PhaseError as e:
             if e.code not in [1, 2]:  # Simulation does not seem to reach end criteria.
                 raise
@@ -2322,7 +2383,7 @@ if __name__ == "__main__":
     # Create pumping cycle simulation object, run simulation, and plot results.
     settings = {
         'cycle': {
-            'traction_phase': TractionPhasePattern,
+            'traction_phase': TractionPhase,
         },
         'retraction': {
             'control': ('tether_force_ground', 1200),
@@ -2335,30 +2396,31 @@ if __name__ == "__main__":
             'time_step': .05,
         },
     }
-    pattern_settings = settings['traction']
-    pattern_settings['tether_length'] = 100.
-    pattern_settings['elevation_angle_ref'] = 25.*np.pi/180.
-    cwp = EvaluatePattern(pattern_settings)
-    cwp.calc_performance_along_pattern(sys_props, env_state, 100, print_details=True)
-    # cwp.plot_traces((cwp.s, 'Normalised path distance [-]'), ('reeling_speed', 'power_ground', 'apparent_wind_speed', 'tether_force_ground', 'kite_tangential_speed'),
-    #                 ('Reeling speed [m/s]', 'Power [W]', 'Apparent wind speed [m/s]', 'Tether force [N]', 'Tangential speed [m/s]'))
-    cwp.plot_traces((cwp.s, 'Normalised path distance [-]'), ('straight_tether_length', 'elevation_angle', 'azimuth_angle', 'course_angle'),
-                    ('Radius [m]', 'Elevation [deg]', 'Azimuth [deg]', 'Course [deg]'),
-                    (None, 180./np.pi, 180./np.pi, 180./np.pi))
-    cwp.plot_traces((cwp.time, 'Time [s]'), ('straight_tether_length', 'elevation_angle', 'azimuth_angle', 'course_angle'),
-                    ('Radius [m]', 'Elevation [deg]', 'Azimuth [deg]', 'Course [deg]'),
-                    (None, 180./np.pi, 180./np.pi, 180./np.pi))
-    cwp.plot_pattern()
-
-    # cycle = Cycle(settings)
-    # cycle.follow_wind = True
-    # cycle.run_simulation(sys_props, env_state, print_summary=True)
-    # cycle.time_plot(('reeling_speed', 'power_ground', 'apparent_wind_speed', 'tether_force_ground'),
-    #                 ('Reeling speed [m/s]', 'Power [W]', 'Apparent wind speed [m/s]', 'Tether force [N]'))
-    # cycle.time_plot(('straight_tether_length', 'elevation_angle', 'azimuth_angle', 'course_angle'),
+    # pattern_settings = settings['traction']
+    # pattern_settings['tether_length'] = 100.
+    # pattern_settings['elevation_angle_ref'] = 25.*np.pi/180.
+    # cwp = EvaluatePattern(pattern_settings)
+    # cwp.calc_performance_along_pattern(sys_props, env_state, 100, print_details=True)
+    # # cwp.plot_traces((cwp.s, 'Normalised path distance [-]'), ('reeling_speed', 'power_ground', 'apparent_wind_speed', 'tether_force_ground', 'kite_tangential_speed'),
+    # #                 ('Reeling speed [m/s]', 'Power [W]', 'Apparent wind speed [m/s]', 'Tether force [N]', 'Tangential speed [m/s]'))
+    # cwp.plot_traces((cwp.s, 'Normalised path distance [-]'), ('straight_tether_length', 'elevation_angle', 'azimuth_angle', 'course_angle'),
     #                 ('Radius [m]', 'Elevation [deg]', 'Azimuth [deg]', 'Course [deg]'),
     #                 (None, 180./np.pi, 180./np.pi, 180./np.pi))
-    # cycle.time_plot(('straight_tether_length', 'reeling_speed', 'x', 'y', 'z'),
-    #                 ('r [m]', r'$\dot{\mathrm{r}}$ [m/s]', 'x [m]', 'y [m]', 'z [m]'))
-    # cycle.trajectory_plot3d()
+    # cwp.plot_traces((cwp.time, 'Time [s]'), ('straight_tether_length', 'elevation_angle', 'azimuth_angle', 'course_angle'),
+    #                 ('Radius [m]', 'Elevation [deg]', 'Azimuth [deg]', 'Course [deg]'),
+    #                 (None, 180./np.pi, 180./np.pi, 180./np.pi))
+    # cwp.plot_pattern()
+
+    cycle = Cycle(settings)
+    cycle.follow_wind = True
+    cycle.run_simulation(sys_props, env_state, print_summary=True)
+    cycle.time_plot(('reeling_speed', 'power_ground', 'apparent_wind_speed', 'tether_force_ground'),
+                    ('Reeling speed [m/s]', 'Power [W]', 'Apparent wind speed [m/s]', 'Tether force [N]'))
+    cycle.time_plot(('straight_tether_length', 'elevation_angle', 'azimuth_angle', 'course_angle'),
+                    ('Radius [m]', 'Elevation [deg]', 'Azimuth [deg]', 'Course [deg]'),
+                    (None, 180./np.pi, 180./np.pi, 180./np.pi))
+    cycle.time_plot(('straight_tether_length', 'reeling_speed', 'x', 'y', 'z'),
+                    ('r [m]', r'$\dot{\mathrm{r}}$ [m/s]', 'x [m]', 'y [m]', 'z [m]'))
+    cycle.trajectory_plot()
+    cycle.trajectory_plot3d()
     plt.show()
