@@ -10,7 +10,7 @@ et al. The model is implemented in such a way that it can be used for numerical 
 import numpy as np
 import matplotlib.pyplot as plt
 from copy import copy
-import pandas as pd
+# import pandas as pd
 from awe_quasi_steady_model.utils import zip_el, plot_traces, default_colors
 
 np.seterr(all='raise')
