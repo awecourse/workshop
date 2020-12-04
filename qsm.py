@@ -942,7 +942,7 @@ class SteadyState:
         self.kite_tangential_speed = lambda_ * v_wind
         self.wind_speed = v_wind
         self.apparent_wind_speed = v_app
-        self.heading = np.arctan2(v_app_vector[2], v_app_vector[1])
+        self.heading = np.arctan2(-v_app_vector[2], -v_app_vector[1])
         self.inflow_angle = inflow_angle
         self.aerodynamic_force = f_aero
         self.tether_force_kite = f_tether
