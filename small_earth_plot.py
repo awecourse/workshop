@@ -22,7 +22,7 @@ def plot_small_earth(ax):
     ax.set_ylim([-.55, 1.1])
 
     for beta in elevation_lines:
-        phis = np.linspace(azimuth_lines[0], azimuth_lines[-1], 181)
+        phis = np.linspace(azimuth_lines[0], azimuth_lines[-1], 31)
         y, z = calc_proj(beta, phis)
         if beta != np.pi/2.:
             ax.text(y[0]-.1, z[0], "{:.0f}".format(beta*180./np.pi), horizontalalignment='center')
@@ -31,7 +31,7 @@ def plot_small_earth(ax):
         ax.plot(y, z, 'grey', linewidth=.5)
 
     for phi in azimuth_lines:
-        betas = np.linspace(elevation_lines[0], elevation_lines[-1], 91)
+        betas = np.linspace(elevation_lines[0], elevation_lines[-1], 16)
         y, z = calc_proj(betas, phi)
         if -np.pi/2. < phi < np.pi/2.:
             ax.text(y[0], z[0]-.1, "{:.0f}".format(phi*180./np.pi), horizontalalignment='center')
