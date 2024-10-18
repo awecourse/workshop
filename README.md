@@ -33,4 +33,4 @@ In Windows you can launch Jupyter Notebook simply via the start menu. In Linux u
 jupyter notebook
 ```
 
-If everything went well, Jupyter Notebook should now be opened in your browser. Navigate to the working folder and open the ipynb-file. If you have any problems, please send an email to m.schelbergen@tudelft.nl.
+If everything went well, Jupyter Notebook should now be opened in your browser. Navigate to the working folder and open the ipynb-file. If you have any problems, please send an email to r.schmehl@tudelft.nl.
