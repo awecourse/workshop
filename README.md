@@ -24,7 +24,7 @@ packages already installed. If you are not using Anaconda, please install [Jupyt
 install the required packages:
 
 ```commandline
-pip install --user scipy numpy matplotlib
+pip install --user scipy numpy matplotlib ipywidgets
 ```
 
 In Windows you can launch Jupyter Notebook simply via the start menu. In Linux use the lower command in a terminal:
