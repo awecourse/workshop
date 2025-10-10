@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+# JupyterLab 4 + ipywidgets should be fine, but this keeps classic NB happy too
+jupyter nbextension enable --py widgetsnbextension --sys-prefix || true
