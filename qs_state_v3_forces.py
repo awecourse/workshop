@@ -9,11 +9,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
-from awetrim import SystemModel, State
-from awetrim.environment.Wind import Wind
-from awetrim.system.kite import Kite
-from awetrim.system.tether import RigidLumpedTether
-from awetrim.utils.reference_frames import transformation_C_from_W
+from system_model import SystemModel, State
+from wind import Wind
+from kite import Kite
+from tether import RigidLumpedTether
 
 DATA_ROOT = Path(__file__).resolve().parents[0]
 
@@ -330,13 +329,7 @@ def plot_qs_forces(
         "force_tether_at_kite": {"color": "C2", "label": "Tether"},
     }
 
-    pos = np.array(
-        transformation_C_from_W(
-            state.angle_azimuth,
-            state.angle_elevation,
-            state.angle_course,
-        ).T
-    ) @ np.array([0, 0, 0])
+    pos = np.array([0, 0, 0])
     kite_point = pos[[0, 2]]
     bridle_point = np.array([0.0, -5.0])
     airfoil = naca0012_outline(chord=chord_length, n_points=200)

@@ -3,4 +3,3 @@ scipy
 matplotlib
 ipywidgets
 jupyterlab
-git+https://github.com/ocayon/awetrim.git@develop

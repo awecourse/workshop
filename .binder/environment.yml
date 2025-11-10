@@ -8,6 +8,3 @@ dependencies:
   - matplotlib
   - ipywidgets
   - jupyterlab
-  - pip
-  - pip:
-    - git+https://github.com/ocayon/awetrim.git@develop
