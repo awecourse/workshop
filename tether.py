@@ -1,6 +1,6 @@
 import casadi as ca
 import numpy as np
-from awetrim.utils.reference_frames import transformation_C_from_W
+from utils import transformation_C_from_W
 from abc import ABC, abstractmethod
 from scipy import integrate
 
