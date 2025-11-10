@@ -1,6 +1,5 @@
 import casadi as ca
-from awetrim.utils.utils import skew_symmetric
-from awetrim.utils.reference_frames import (
+from utils import (
     transformation_C_from_W,
     transformation_C_from_A,
     transformation_C_from_K,
