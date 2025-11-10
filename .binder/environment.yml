@@ -8,3 +8,4 @@ dependencies:
   - matplotlib
   - ipywidgets
   - jupyterlab
+  - casadi
