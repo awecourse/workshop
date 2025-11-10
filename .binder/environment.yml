@@ -2,9 +2,12 @@ name: awe-workshop
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
-  - numpy=1.26
-  - scipy=1.11
-  - matplotlib=3.8
-  - ipywidgets=8.1
-  - jupyterlab=4.2
+  - python=3.13
+  - numpy
+  - scipy
+  - matplotlib
+  - ipywidgets
+  - jupyterlab
+  - pip
+  - pip:
+    - git+https://github.com/ocayon/awetrim.git@develop
