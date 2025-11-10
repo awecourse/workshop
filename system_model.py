@@ -1,14 +1,29 @@
 import casadi as ca
 import numpy as np
-from awetrim.system.tether import RigidLinkTether, FlexibleLinkTether
-from awetrim.system.kite import Kite
-from awetrim.kinematics.Kinematics import KiteKinematics
-from awetrim.environment.Wind import Wind
-from awetrim.utils.defaults import DEFAULT_BOUNDS
+from tether import RigidLinkTether, FlexibleLinkTether
+from kite import Kite
+from kinematics import KiteKinematics
+from wind import Wind
 import inspect
 import logging
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_BOUNDS = {
+    "tension_tether_ground": [0, 1e12],
+    "input_steering": [-3, 3],
+    "s_dot": [-10, 30],
+    "s_ddot": [-100, 100],
+    "speed_tangential": [0, 400],
+    "angle_roll": [-np.pi / 2, np.pi / 2],
+    "timeder_angle_course": [-np.pi, np.pi],
+    "angle_pitch": [-np.pi / 4, np.pi / 4],
+    "angle_yaw": [-np.pi / 4, np.pi / 4],
+    "angle_elevation": [-np.pi, np.pi],
+    "speed_radial": [-10, 10],
+    "length_tether": [0, 1000],
+    "distance_radial": [0, 1000],
+}
 
 
 class SystemModel(KiteKinematics):
