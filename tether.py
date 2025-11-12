@@ -63,8 +63,9 @@ class FlexibleLinkTether(Tether):
 
 class RigidLumpedTether(Tether):
 
-    def __init__(self, E=132e9, diameter=0.01, density=970):
+    def __init__(self, E=132e9, diameter=0.01, density=970, material="dyneema"):
         super().__init__(E, diameter, density)
+        self.material = material
         self.tension_tether_ground = ca.MX.sym("tension_tether_ground")
         self.is_tether_rigid = True
 

@@ -6,15 +6,19 @@ class Wind:
     def __init__(
         self,
         wind_model="logarithmic",
+        speed_wind_ref=10.0,
+        height_ref=6,
         z0=0.01,
+        kappa=0.41,
         tabulated_heights=None,
         tabulated_speeds=None,
     ):
-        self._speed_wind_ref = ca.MX.sym("speed_wind_ref")
-        self._speed_friction = ca.MX.sym("speed_friction")
-        self._height_ref = 6  # 10
+        self.kappa = kappa
+        self._speed_wind_ref = speed_wind_ref
+        self._speed_friction = speed_wind_ref * self.kappa / ca.log(height_ref / z0)
+        self._height_ref = height_ref
         self.wind_model = wind_model
-        self.kappa = 0.41
+
         self.z0 = z0
 
         # Store tabulated data if applicable

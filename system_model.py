@@ -20,7 +20,7 @@ DEFAULT_BOUNDS = {
     "angle_pitch": [-np.pi / 4, np.pi / 4],
     "angle_yaw": [-np.pi / 4, np.pi / 4],
     "angle_elevation": [-np.pi, np.pi],
-    "speed_radial": [-10, 10],
+    "speed_radial": [-30, 30],
     "length_tether": [0, 1000],
     "distance_radial": [0, 1000],
 }
@@ -36,8 +36,6 @@ class SystemModel(KiteKinematics):
         wind_model=None,
         tether=None,
         kite=None,
-        acceleration_winch=2,
-        depower_rate=0.2,
     ):
         """
         Initialize the kite system with its parameters.
@@ -48,8 +46,6 @@ class SystemModel(KiteKinematics):
         self.define_kite_model(kite)
         self.define_tether_model(tether)
 
-        self.acceleration_winch = acceleration_winch
-        self.depower_rate = depower_rate
         # self.steering_control = self.steering_control
 
         if self.steering_control not in ["asymmetric", "roll"]:
@@ -147,6 +143,14 @@ class SystemModel(KiteKinematics):
         else:
             self.wind = wind_model
 
+    @property
+    def wind(self):
+        return self._wind
+
+    @wind.setter
+    def wind(self, value):
+        self._wind = value
+
     def establish_ode_function(self):
         dot_r = self.speed_radial
         dot_beta = self.timeder_angle_elevation
@@ -217,14 +221,14 @@ class SystemModel(KiteKinematics):
             self.setup_qs_solver(unknown_vars)
 
         p = [state_dict[name] for name in self._qs_inputs]
-        print("Input names:", self._qs_inputs)
+        # print("Input names:", self._qs_inputs)
         lbx, ubx, lbg, ubg = self.get_boundaries(state_dict, unknown_vars)
 
         x0 = [safe_value(state_dict.get(var, 1.0)) for var in unknown_vars]
         # Solve the quasi-steady state equations
 
-        print("Initial guess:", x0)
-        print("Inputs (p):", p)
+        # print("Initial guess:", x0)
+        # print("Inputs (p):", p)
         sol = self._qs_solver(x0=x0, p=p, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
 
         if np.linalg.norm(sol["g"]) > 1:

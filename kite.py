@@ -210,8 +210,6 @@ class Kite(Wing):
         mass_kcu=0,
         g=9.81,
         rho=1.225,
-        center_aerodynamic_wing=[0, 0, 10],
-        center_gravity_wing=[0, 0, 10],
         steering_control="roll",
     ):
         """
@@ -223,10 +221,6 @@ class Kite(Wing):
         self.steering_control = steering_control
         self.g = g  # Gravitational acceleration
         self.rho = rho  # Air density
-        self.center_aerodynamic_wing = (
-            center_aerodynamic_wing  # Center of aerodynamic pressure
-        )
-        self.center_gravity_wing = center_gravity_wing  # Center of gravity
 
         # Add these missing symbolic variables
         self.pitch_kcu = ca.MX.sym("pitch_kcu")

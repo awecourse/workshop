@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """Utility functions."""
 
+import json
 import matplotlib.pyplot as plt
+from pathlib import Path
+from typing import Optional
 from numpy import all, diff, array
 
 default_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -228,3 +231,13 @@ def transformation_C_from_W(azimuth, elevation, course):
     return transformation_C_from_AZR(course) @ transformation_AZR_from_W(
         azimuth, elevation
     )
+
+
+DATA_ROOT = Path(__file__).resolve().parents[0]
+
+
+def load_aero_input(path: Optional[Path] = None) -> dict:
+    if path is None:
+        path = DATA_ROOT / "v3_aero_input.json"
+    with open(path, "r") as f:
+        return json.load(f)

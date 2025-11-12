@@ -13,27 +13,19 @@ from system_model import SystemModel, State
 from wind import Wind
 from kite import Kite
 from tether import RigidLumpedTether
-
-DATA_ROOT = Path(__file__).resolve().parents[0]
-
-
-def load_v3_aero(path: Optional[Path] = None) -> dict:
-    if path is None:
-        path = DATA_ROOT / "v3_aero_input.json"
-    with open(path, "r") as f:
-        return json.load(f)
+from utils import load_aero_input
 
 
 def build_qs_model(
     aero_input: dict,
     wind_speed: float = 12.0,
-    tether_diam: float = 1e-3,
+    tether_diam: float = 1e-5,
     mass_wing: float = 60.0,
     area_wing: float = 47.0,
 ) -> SystemModel:
     wind = Wind(wind_model="uniform", z0=0.1)
     wind.speed_wind_ref = float(wind_speed)
-    wind.speed_friction = 0.41 * wind_speed / np.log(100 / wind.z0)
+    # wind.speed_friction = 0.41 * wind_speed / np.log(100 / wind.z0)
 
     kite = Kite(
         mass_wing=mass_wing,
@@ -51,34 +43,28 @@ def build_qs_model(
 
 
 def solve_qs_state(
-    model: SystemModel,
-    azimuth: float = 0.0,
-    elevation: float = 0.0,
-    course_angle: float = np.pi / 2,
-    radius: float = 200.0,
-    speed_radial: float = 0.0,
-    vt_guess: float = 60.0,
-    tension_guess: float = 1e8,
-) -> State:
-    st0 = State(
-        distance_radial=float(radius),
-        angle_azimuth=float(azimuth),
-        angle_elevation=float(elevation),
-        angle_course=float(course_angle),
-        speed_radial=float(speed_radial),
-        speed_tangential=float(vt_guess),
-        input_steering=0.0,
-        input_depower=0.0,
-        timeder_angle_course=0.0,
-        tension_tether_ground=float(tension_guess),
-    )
-    unknown_vars = [
+    model: SystemModel = None,
+    state: dict = None,
+    unknown_vars: list = [
         "speed_tangential",
         "input_steering",
         "tension_tether_ground",
-    ]
-    with contextlib.redirect_stdout(io.StringIO()):
-        solved = model.solve_quasi_steady(st0, unknown_vars=unknown_vars)
+    ],
+) -> State:
+    st0 = State(
+        distance_radial=float(state.get("distance_radial", 200.0)),
+        angle_azimuth=float(state.get("angle_azimuth", 0.0)),
+        angle_elevation=float(state.get("angle_elevation", np.pi / 2)),
+        angle_course=float(state.get("angle_course", np.pi / 2)),
+        speed_radial=float(state.get("speed_radial", 0.0)),
+        speed_tangential=float(state.get("speed_tangential", 150.0)),
+        input_steering=float(state.get("input_steering", 0.0)),
+        timeder_angle_course=float(state.get("timeder_angle_course", 0.0)),
+        tension_tether_ground=float(state.get("tension_tether_ground", 1e10)),
+        input_depower=float(state.get("input_depower", 0.0)),
+    )
+    solved = model.solve_quasi_steady(st0, unknown_vars=unknown_vars)
+
     if solved is None:
         raise RuntimeError(
             "Quasi-steady solver did not converge for the requested configuration."
@@ -235,6 +221,7 @@ def naca0012_outline(chord: float = 4.0, n_points: int = 200) -> np.ndarray:
 
 
 def plot_qs_forces(
+    sys_model: SystemModel = None,
     azimuth_deg: float = 0.0,
     elevation_deg: float = 0.0,
     course_deg: float = 90.0,
@@ -243,6 +230,7 @@ def plot_qs_forces(
     area_wing: float = 19.75,
     speed_radial: float = 2.0,
     radius: float = 200.0,
+    depower: float = 0.0,
     chord_length: float = 4.0,
     save_path: Optional[Path] = None,
     show: bool = True,
@@ -257,38 +245,43 @@ def plot_qs_forces(
         state: Solved quasi-steady state
         forces: Dictionary of force vectors
     """
-    aero_input = load_v3_aero()
-    model = build_qs_model(
-        aero_input,
-        wind_speed=wind_speed,
-        tether_diam=1e-3,
-        mass_wing=mass_wing,
-        area_wing=area_wing,
-    )
+    # Update model parameters from sliders
+    sys_model.mass_wing = mass_wing
+    sys_model.area_wing = area_wing
+    sys_model.input_depower = depower
+    sys_model.wind.speed_wind_ref = wind_speed
+
+    # Important: ensure the solver reflects updated parameters
+    # The quasi-steady solver is cached; after parameter changes we need to reset it
+    if hasattr(sys_model, "reset_solver"):
+        sys_model.reset_solver()
+
     state = solve_qs_state(
-        model,
-        azimuth=np.radians(azimuth_deg),
-        elevation=np.radians(elevation_deg),
-        course_angle=np.radians(course_deg),
-        radius=radius,
-        speed_radial=speed_radial,
+        sys_model,
+        state={
+            "angle_azimuth": np.radians(azimuth_deg),
+            "angle_elevation": np.radians(elevation_deg),
+            "angle_course": np.radians(course_deg),
+            "distance_radial": radius,
+            "speed_radial": speed_radial,
+        },
     )
 
     state_dict = state.to_dict()
-    forces = evaluate_forces(model, state_dict)
+    forces = evaluate_forces(sys_model, state_dict)
 
-    forces.update(compute_lift_drag(model, state_dict, forces))
+    forces.update(compute_lift_drag(sys_model, state_dict, forces))
 
     # Extract velocities for velocity triangle
-    velocities = extract_velocities(model, state_dict)
+    velocities = extract_velocities(sys_model, state_dict)
     # print("Velocities for velocity triangle:", velocities)
 
     # Extract 3D position and velocity
-    data_3d = extract_3d_position_velocity(model, state_dict)
+    data_3d = extract_3d_position_velocity(sys_model, state_dict)
 
     # Extract angle of attack
     try:
-        aoa_fn = model.extract_function("angle_of_attack")
+        aoa_fn = sys_model.extract_function("angle_of_attack")
         kwargs = {arg: state_dict[arg] for arg in aoa_fn.name_in() if arg in state_dict}
         angle_attack = float(aoa_fn(**kwargs)["angle_of_attack"])
     except Exception:
@@ -301,14 +294,14 @@ def plot_qs_forces(
     ax3d = fig.add_subplot(122, projection="3d")  # 3D position plot
 
     legend_handles = {
-        "Kite": Line2D(
+        "CP": Line2D(
             [0],
             [0],
             marker="o",
             color="none",
             markerfacecolor="k",
             markersize=6,
-            label="Kite",
+            label="Center of Pressure (CP)",
         ),
         "Bridle point B": Line2D(
             [0],
@@ -333,7 +326,8 @@ def plot_qs_forces(
     kite_point = pos[[0, 2]]
     bridle_point = np.array([0.0, -5.0])
     airfoil = naca0012_outline(chord=chord_length, n_points=200)
-    chord_dir = np.array([-1.0, 0.0])
+    chord_dir = np.array([-1.0, 0.2 * depower])
+    chord_dir /= np.linalg.norm(chord_dir)
 
     thickness_dir = np.array([-chord_dir[1], chord_dir[0]])
     translation = kite_point - chord_dir * (chord_length / 3.0)
@@ -348,6 +342,7 @@ def plot_qs_forces(
 
     leading_edge = translation
     trailing_edge = translation + chord_dir * chord_length
+
     ax.plot(
         [bridle_point[0], leading_edge[0]],
         [bridle_point[1], leading_edge[1]],
@@ -427,19 +422,31 @@ def plot_qs_forces(
     velocity_specs = {
         "velocity_apparent": {
             "color": "darkred",
-            "label": "V_a (apparent)",
+            "label": "Apparent speed",
             "linewidth": 2.5,
         },
-        "velocity_kite": {"color": "darkblue", "label": "V_kite", "linewidth": 2.0},
-        "velocity_wind": {"color": "darkgreen", "label": "V_wind", "linewidth": 2.0},
-        "velocity_radial": {"color": "purple", "label": "V_radial", "linewidth": 1.5},
+        "velocity_kite": {
+            "color": "darkblue",
+            "label": "Tangential speed",
+            "linewidth": 2.0,
+        },
+        "velocity_wind": {
+            "color": "darkgreen",
+            "label": "Wind speed",
+            "linewidth": 2.0,
+        },
+        "velocity_radial": {
+            "color": "purple",
+            "label": "Radial speed",
+            "linewidth": 1.5,
+        },
     }
 
     # Position velocity triangle at leading edge
     vel_origin = leading_edge.copy()
 
     # Scale velocities to reasonable arrow size (different from force scaling)
-    vel_scale = 0.12  # adjust to make arrows visible but not overwhelming
+    vel_scale = 0.05  # adjust to make arrows visible but not overwhelming
 
     velocities_xz = {}
     for name in velocity_specs.keys():
@@ -545,7 +552,7 @@ def plot_qs_forces(
     pad = chord_length * 0.25 + 1.5
     x_vals = [bridle_point[0], kite_point[0], leading_edge[0], trailing_edge[0]]
     z_vals = [bridle_point[1], kite_point[1], leading_edge[1], trailing_edge[1]]
-    ax.set_xlim(min(x_vals) - pad, max(x_vals) + pad + 2)
+    ax.set_xlim(min(x_vals) - 1.5, max(x_vals) + pad + 2)
     ax.set_ylim(min(z_vals) - pad, max(z_vals) + pad)
     ax.set_title("Force Vectors (X–Z Plane Projection)")
     ax.set_aspect("equal", adjustable="box")
@@ -553,8 +560,10 @@ def plot_qs_forces(
 
     # Build summary text with angle of attack if available
     summary_lines = [
-        f"V_t = {state.speed_tangential:.2f} m/s",
+        f"Tangential speed = {state.speed_tangential:.2f} m/s",
         f"Tether tension = {state.tension_tether_ground:.1f} N",
+        f"Power = {state.speed_radial * state.tension_tether_ground / 1000:.2f} kW",
+        f"Lift-to-drag ratio = {np.linalg.norm(forces.get('force_lift', [0,0,0])) / np.linalg.norm(forces.get('force_drag', [1e-6,0,0])):.2f}",
     ]
     if angle_attack is not None:
         summary_lines.append(f"α (AoA) = {np.degrees(angle_attack):.2f}°")
@@ -564,7 +573,7 @@ def plot_qs_forces(
     summary = "\n".join(summary_lines)
 
     ax.text(
-        0.02,
+        0.8,
         0.02,
         summary,
         transform=ax.transAxes,
