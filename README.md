@@ -9,7 +9,8 @@ For achieving these learning objectives, we calculate performance metrics of an 
 The workshop uses a Jupyter Notebook to walk you through the material. The notebook combines live Python code together with narrative text, which will guide you step-by-step through calculations and generate and visualize results along the way.
 If you are new to Jupyter Notebooks, please watch a tutorial video on how to use them (e.g.: [this tutorial](https://youtu.be/HW29067qVWk?t=323 "Introduction video on Jupyter Notebook - watch from 5:23 to 14:25") - watch 5:23-14:25). Launch the Jupyter Notebook by clicking on the lower button:
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/awecourse/workshop/HEAD?filepath=awe_workshop.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ocayon/workshop/HEAD?filepath=awe_workshop.ipynb)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ocayon/workshop/HEAD?filepath=qs_v3_force_explorer.ipynb)
 
 ### Providing feedback
 
