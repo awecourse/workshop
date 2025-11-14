@@ -161,14 +161,14 @@ def create_pattern_from_dict(
             "kappa",
         ],
         "cst_lissajous": [
-            "r0",
+            "distance_radial_start",
             "az_amp0",
             "beta_amp0",
             "beta0",
         ],
         "spline": ["r0", "r1", "C_az", "C_el", "s_norm_az", "s_norm_el"],
         "cst_helix": [
-            "r0",
+            "distance_radial_start",
             "az_amp0",
             "beta_amp0",
             "beta0",
@@ -202,6 +202,7 @@ def create_pattern_from_dict(
 class CST_Lissajous(ParametrizedPatternsAngles):
     def __init__(
         self,
+        distance_radial_start,
         az_amp0,
         beta_amp0,
         beta0,
@@ -232,7 +233,7 @@ class CST_Lissajous(ParametrizedPatternsAngles):
             normalize_bumps=normalize_bumps,
             **kwargs,
         )
-
+        self.r0 = distance_radial_start
         self.omega = 1.0 if downloops else -1.0
         # Base weight vectors
         self.az_coeffs = ca.vertcat(az_coeffs)
@@ -303,7 +304,7 @@ class CST_Lissajous(ParametrizedPatternsAngles):
 class CST_Helix(ParametrizedPatternsAngles):
     def __init__(
         self,
-        r0,
+        distance_radial_start,
         az_amp0,
         beta_amp0,
         beta0,
@@ -320,7 +321,6 @@ class CST_Helix(ParametrizedPatternsAngles):
         **kwargs,
     ):  # <- only flags
         super().__init__(
-            r0=r0,
             az_amp0=az_amp0,
             beta_amp0=beta_amp0,
             beta0=beta0,
@@ -336,7 +336,7 @@ class CST_Helix(ParametrizedPatternsAngles):
             repeat_beta=repeat_beta,
             **kwargs,
         )
-
+        self.r0 = distance_radial_start
         self.omega = 1.0
         # Base weight vectors
         self.az_coeffs = ca.vertcat(az_coeffs)

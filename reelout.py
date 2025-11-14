@@ -21,7 +21,7 @@ PHYSICAL_CONFIG = {
 
 PATH_PARAMETERS = {
     "pattern_type": "cst_helix",
-    "r0": 200,
+    "distance_radial_start": 200,
     "az_amp0": np.radians(20),
     "beta_amp0": np.radians(20),
     "beta0": np.radians(25),
