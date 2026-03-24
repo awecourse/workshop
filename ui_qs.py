@@ -162,7 +162,7 @@ def launch_qs_forces_ui(
             fig, axes, state, forces = plot_qs_forces(
                 course_deg=float(course_slider.value),
                 mass_wing=float(mass_slider.value),
-                area_wing = float(kite.area_wing)
+                area_wing = float(kite.area_wing),
                 elevation_deg=float(elevation_slider.value),
                 azimuth_deg=float(azimuth_slider.value),
                 wind_speed=float(wind_slider.value),
