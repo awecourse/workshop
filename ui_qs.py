@@ -147,8 +147,8 @@ def launch_qs_forces_ui(
             # Rebuild a fresh SystemModel for updated parameters to ensure
             # CasADi symbolics are consistent with the current settings.
             try:
-                area_val = getattr(kite, "area_wing", 19.75) or 19.75
-                tether_d = getattr(tether, "diameter", 1e-5)
+                area_val = kite.area_wing
+                tether_d = tether.diameter
                 sys_model_local = build_qs_model(
                     aero_input=aero_input,
                     wind_speed=float(wind_slider.value),
