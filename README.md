@@ -22,10 +22,10 @@ Launching the notebook directly from this repository using the button above is t
 > [!WARNING]  
 > Launching the notebook in Mybinder via the button above no longer works. Please use the alternative version described below.
 
-Alternatively, you can run the notebook locally. However, you need to run it in Python 3.6 as some functionalities stopped working with newer versions. To run the notebook locally, clone this repository, or manually download it to your working folder (extract the .zip archive) if you are unfamiliar with git. If you're new to Python, we recommend you install it using [Anaconda](https://docs.anaconda.com/anaconda/install/ "Installation instructions for Anaconda"). Anaconda comes with Jupyter Notebook and required packages already installed. If you are not using Anaconda, please install [Jupyter Notebook](https://jupyter.readthedocs.io/en/latest/install.html "Installation instructions for Jupyter Notebook") yourself and execute the lower command to install the required packages:
+Alternatively, you can run the notebook locally with Python 3.11 or newer. To run the notebook locally, clone this repository, or manually download it to your working folder (extract the .zip archive) if you are unfamiliar with git. If you're new to Python, we recommend you install it using [Anaconda](https://docs.anaconda.com/anaconda/install/ "Installation instructions for Anaconda"). Anaconda comes with Jupyter Notebook and required packages already installed. If you are not using Anaconda, please install [Jupyter Notebook](https://jupyter.readthedocs.io/en/latest/install.html "Installation instructions for Jupyter Notebook") yourself and execute the lower command to install the required packages:
 
 ```commandline
-pip install --user scipy numpy matplotlib ipywidgets
+pip install --user -r requirements.txt
 ```
 
 In Windows you can launch Jupyter Notebook simply via the start menu. In Linux use the lower command in a terminal:

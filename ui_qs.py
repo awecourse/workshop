@@ -144,20 +144,17 @@ def launch_qs_forces_ui(
         with out:
             out.clear_output(wait=True)
 
-            # Rebuild a fresh SystemModel for updated parameters to ensure
-            # CasADi symbolics are consistent with the current settings.
-            try:
-                area_val = kite.area_wing
-                tether_d = tether.diameter
-                sys_model_local = build_qs_model(
-                    aero_input=aero_input,
-                    wind_speed=float(wind_slider.value),
-                    tether_diam=float(tether_d),
-                    mass_wing=float(mass_slider.value),
-                    area_wing=float(area_val),
-                )
-            except Exception:
-                sys_model_local = sys_model
+            # Rebuild a fresh SystemModel for every update. plot_qs_forces
+            # writes the slider values into the model it receives, so it must
+            # never get the notebook's shared sys_model: that would change the
+            # wind speed, mass and depower used in all later sections.
+            sys_model_local = build_qs_model(
+                aero_input=aero_input,
+                wind_speed=float(wind_slider.value),
+                tether_diam=float(tether.diameter_tether),
+                mass_wing=float(mass_slider.value),
+                area_wing=float(kite.area_wing),
+            )
 
             fig, axes, state, forces = plot_qs_forces(
                 course_deg=float(course_slider.value),
