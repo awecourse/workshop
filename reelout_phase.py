@@ -303,6 +303,7 @@ class Reelout:
             phase_sym=True,
         )
 
+        slider = None
         if run_plots:
             variables_to_plot = variables_to_plot or self.variables_to_plot
             if axes is not None:

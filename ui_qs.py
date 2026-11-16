@@ -156,19 +156,30 @@ def launch_qs_forces_ui(
                 area_wing=float(kite.area_wing),
             )
 
-            fig, axes, state, forces = plot_qs_forces(
-                course_deg=float(course_slider.value),
-                mass_wing=float(mass_slider.value),
-                area_wing = float(kite.area_wing),
-                elevation_deg=float(elevation_slider.value),
-                azimuth_deg=float(azimuth_slider.value),
-                wind_speed=float(wind_slider.value),
-                speed_radial=float(radial_slider.value),
-                depower=float(depower_slider.value),
-                sys_model=sys_model_local,
-                show=False,
-                close=False,
-            )
+            try:
+                fig, axes, state, forces = plot_qs_forces(
+                    course_deg=float(course_slider.value),
+                    mass_wing=float(mass_slider.value),
+                    area_wing=float(kite.area_wing),
+                    elevation_deg=float(elevation_slider.value),
+                    azimuth_deg=float(azimuth_slider.value),
+                    wind_speed=float(wind_slider.value),
+                    speed_radial=float(radial_slider.value),
+                    depower=float(depower_slider.value),
+                    sys_model=sys_model_local,
+                    show=False,
+                    close=False,
+                )
+            except RuntimeError:
+                print(
+                    "No steady flight is possible for this combination.\n\n"
+                    "The tether can only pull, never push. Typical reasons:\n"
+                    "  - reeling out faster than the wind can pull the kite away\n"
+                    "    (most likely high up, where little wind blows along the tether),\n"
+                    "  - a kite too heavy to stay in the air at this wind speed.\n\n"
+                    "Move a slider back to find where steady flight stops being possible."
+                )
+                return
             display(fig)
             plt.close(fig)
 

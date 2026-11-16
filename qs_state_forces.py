@@ -51,19 +51,31 @@ def solve_qs_state(
         "tension_tether_ground",
     ],
 ) -> State:
-    st0 = State(
-        distance_radial=float(state.get("distance_radial", 200.0)),
-        angle_azimuth=float(state.get("angle_azimuth", 0.0)),
-        angle_elevation=float(state.get("angle_elevation", np.pi / 2)),
-        angle_course=float(state.get("angle_course", np.pi / 2)),
-        speed_radial=float(state.get("speed_radial", 0.0)),
-        speed_tangential=float(state.get("speed_tangential", 150.0)),
-        input_steering=float(state.get("input_steering", 0.0)),
-        timeder_angle_course=float(state.get("timeder_angle_course", 0.0)),
-        tension_tether_ground=float(state.get("tension_tether_ground", 1e10)),
-        input_depower=float(state.get("input_depower", 0.0)),
-    )
-    solved = model.solve_quasi_steady(st0, unknown_vars=unknown_vars)
+    def initial_state(speed_tangential):
+        return State(
+            distance_radial=float(state.get("distance_radial", 200.0)),
+            angle_azimuth=float(state.get("angle_azimuth", 0.0)),
+            angle_elevation=float(state.get("angle_elevation", np.pi / 2)),
+            angle_course=float(state.get("angle_course", np.pi / 2)),
+            speed_radial=float(state.get("speed_radial", 0.0)),
+            speed_tangential=float(speed_tangential),
+            input_steering=float(state.get("input_steering", 0.0)),
+            timeder_angle_course=float(state.get("timeder_angle_course", 0.0)),
+            tension_tether_ground=float(state.get("tension_tether_ground", 1e10)),
+            input_depower=float(state.get("input_depower", 0.0)),
+        )
+
+    # The Newton solve depends on the initial guess of the tangential speed. Try
+    # the given (or default) guess first, then guesses scaled with the wind speed.
+    guesses = [state.get("speed_tangential", 150.0)]
+    if "speed_tangential" in unknown_vars:
+        speed_wind = float(model.wind.speed_wind_ref)
+        guesses += [3.0 * speed_wind, 1.5 * speed_wind, 6.0 * speed_wind]
+    solved = None
+    for guess in guesses:
+        solved = model.solve_quasi_steady(initial_state(guess), unknown_vars=unknown_vars)
+        if solved is not None:
+            break
 
     if solved is None:
         raise RuntimeError(

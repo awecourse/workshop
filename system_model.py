@@ -232,7 +232,8 @@ class SystemModel(KiteKinematics):
         sol = self._qs_solver(x0=x0, p=p, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
 
         if np.linalg.norm(sol["g"]) > 1:
-            logger.warning(
+            # Debug level: callers retry other initial guesses and report a real failure themselves.
+            logger.debug(
                 "Quasi-steady solver did not converge. Residual norm: %.4f",
                 np.linalg.norm(sol["g"]),
             )
