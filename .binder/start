@@ -1,0 +1,9 @@
+#!/bin/bash
+# Binder pods see all cores of the host machine (e.g. 48) but may use only
+# about one. Without these limits the numerical libraries behind CasADi and
+# NumPy start one thread per visible core and fight over that single CPU,
+# making every solve ~300x slower (a UI redraw took ~100 s instead of 0.3 s).
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+exec "$@"
